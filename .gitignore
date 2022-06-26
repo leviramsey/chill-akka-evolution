@@ -1,0 +1,4 @@
+metals.sbt
+bloop.sbt
+.bsp
+target
