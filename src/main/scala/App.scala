@@ -9,26 +9,37 @@ import scala.concurrent.duration._
 trait ChillSerializable
 
 object Model {
-  case class Guest(name: String)
+  sealed trait GuestInfo {
+    def name: String
+    def loyaltyProgramId: Option[String]
+  }
+
+  case class Guest(override val name: String) extends GuestInfo {
+    def loyaltyProgramId = None
+  }
+
+  case class Member(override val name: String, loyaltyId: String) extends GuestInfo {
+    def loyaltyProgramId = Some(loyaltyId)
+  }
 }
 
 object HotelRoom {
-  import Model.Guest
+  import Model._
 
   sealed trait Command
 
-  case class CheckIn(guest: Guest, replyTo: RecipientRef[Boolean]) extends Command
+  case class CheckIn(guest: GuestInfo, replyTo: RecipientRef[Boolean]) extends Command
   case class CheckOut(guest: Guest, replyTo: RecipientRef[Boolean]) extends Command
 
   sealed trait Event extends ChillSerializable
 
-  case class GuestCheckedIn(guest: Guest) extends Event
+  case class GuestCheckedIn(guest: GuestInfo) extends Event
   case object GuestCheckedOut extends Event
 
   sealed trait State
 
   case object Vacant extends State
-  case class Occupied(guest: Guest) extends State
+  case class Occupied(guest: GuestInfo) extends State
 
   private def replyFalse(to: RecipientRef[Boolean]) = Effect.none[Event, State].thenRun(_ => to ! false)
 
@@ -64,8 +75,9 @@ object HotelRoom {
 object Main {
   def main(args: Array[String]): Unit = {
     import akka.actor.typed.scaladsl.AskPattern._
+
     import HotelRoom._
-    import Model.Guest
+    import Model._
 
     // It's an artisanal, very small-batch hotel, OK?
     val hotelRoom = ActorSystem(HotelRoom(100), "astoria-walledoff")
@@ -76,13 +88,13 @@ object Main {
     implicit val scheduler = hotelRoom.scheduler
 
     val guestOne = Guest("José de San Martín")
-    val guestTwo = Guest("Manuel Belgrano")
+    val guestTwo = Member("Manuel Belgrano", "17700603")
 
-    val checkInFut = hotelRoom.ask(CheckIn(guestOne, _))
+    val checkInFut = hotelRoom.ask(CheckIn(guestTwo, _))
 
     checkInFut.flatMap { response =>
       if (response) {
-        println(s"Checked in $guestOne, now time to check out")
+        println(s"Checked in $guestTwo, now time to check out")
 
         hotelRoom.ask(CheckOut(guestOne, _))
       } else Future.unit
